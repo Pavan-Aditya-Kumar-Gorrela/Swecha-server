@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Stream Viewer</title>
+  <style>
+    body { margin: 0; padding: 20px; font-family: Arial, sans-serif; }
+    video { width: 100%; max-width: 800px; background: black; }
+    h1 { text-align: center; }
+  </style>
+</head>
+<body>
+  <h1>Emergency Live Stream</h1>
+  <video id="remoteVideo" autoplay playsinline></video>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    let peerConnection;
+
+    const config = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+      ],
+    };
+
+    socket.on('offer', (id, description) => {
+      peerConnection = new RTCPeerConnection(config);
+      peerConnection
+        .setRemoteDescription(description)
+        .then(() => peerConnection.createAnswer())
+        .then((sdp) => peerConnection.setLocalDescription(sdp))
+        .then(() => {
+          socket.emit('answer', id, peerConnection.localDescription);
+        });
+      peerConnection.ontrack = (event) => {
+        const video = document.getElementById('remoteVideo');
+        video.srcObject = event.streams[0];
+      };
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit('candidate', id, event.candidate);
+        }
+      };
+    });
+
+    socket.on('candidate', (id, candidate) => {
+      peerConnection
+        .addIceCandidate(new RTCIceCandidate(candidate))
+        .catch((e) => console.error(e));
+    });
+
+    socket.on('broadcaster', () => {
+      socket.emit('watcher');
+    });
+
+    socket.on('broadcasterDisconnected', () => {
+      if (peerConnection) {
+        peerConnection.close();
+        document.getElementById('remoteVideo').srcObject = null;
+      }
+    });
+
+    socket.emit('watcher');
+  </script>
+</body>
+</html>
